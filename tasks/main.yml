@@ -1,0 +1,165 @@
+---
+# ROLE: DISCOURSE
+#
+# DESCRIPTION:
+# This role creates an initial Discourse installation.
+# It makes the following assumptions about the Discourse installation:
+# (A) Discourse will run on HTTP / Port 80 only proxied behind Nginx
+# (B) Discourse will use an e-mail service such as MailGun or SendGrid for SMTP
+
+###############################################################################
+################### VARIABLE INITIALIZATION & TASK SETUP ######################
+###############################################################################
+
+# The hostname Discourse will use
+- name: DISCOURSE_HOSTNAME set fact from env if possible
+  set_fact:
+    DISCOURSE_HOSTNAME: "{{ lookup('env', 'DISCOURSE_HOSTNAME') | default('') | trim | split(',') }}"
+  when: lookup('env', 'DISCOURSE_HOSTNAME') | default('', true) | trim != ''
+- name: DISCOURSE_HOSTNAME prompt user input if unset
+  pause:
+    prompt: "SET DISCOURSE_HOSTNAME"
+    echo: yes
+  register: input
+  when: DISCOURSE_HOSTNAME is not defined
+- name: Set DISCOURSE_HOSTNAME fact from user input
+  set_fact:
+    DISCOURSE_HOSTNAME: "{{ input.user_input | default('') | trim | split(',') }}"
+  when: DISCOURSE_HOSTNAME is not defined
+
+# The administrative email for Discourse
+- name: DISCOURSE_EMAIL set fact from env if possible
+  set_fact:
+    DISCOURSE_EMAIL: "{{ lookup('env', 'DISCOURSE_EMAIL') | default('') | trim | split(',') }}"
+  when: lookup('env', 'DISCOURSE_EMAIL') | default('', true) | trim != ''
+- name: DISCOURSE_EMAIL prompt user input if unset
+  pause:
+    prompt: "SET DISCOURSE_EMAIL"
+    echo: yes
+  register: input
+  when: DISCOURSE_EMAIL is not defined
+- name: Set DISCOURSE_EMAIL fact from user input
+  set_fact:
+    DISCOURSE_EMAIL: "{{ input.user_input | default('') | trim | split(',') }}"
+  when: DISCOURSE_EMAIL is not defined
+
+# Discourse SMTP Address
+- name: DISCOURSE_SMTP_ADDRESS set fact from env if possible
+  set_fact:
+    DISCOURSE_SMTP_ADDRESS: "{{ lookup('env', 'DISCOURSE_SMTP_ADDRESS') | default('') | trim | split(',') }}"
+  when: lookup('env', 'DISCOURSE_SMTP_ADDRESS') | default('', true) | trim != ''
+- name: DISCOURSE_SMTP_ADDRESS prompt user input if unset
+  pause:
+    prompt: "SET DISCOURSE_SMTP_ADDRESS"
+    echo: yes
+  register: input
+  when: DISCOURSE_SMTP_ADDRESS is not defined
+- name: Set DISCOURSE_SMTP_ADDRESS fact from user input
+  set_fact:
+    DISCOURSE_SMTP_ADDRESS: "{{ input.user_input | default('') | trim | split(',') }}"
+  when: DISCOURSE_SMTP_ADDRESS is not defined
+
+# Discourse SMTP Relay Port
+- name: DISCOURSE_SMTP_PORT set fact from env if possible
+  set_fact:
+    DISCOURSE_SMTP_PORT: "{{ lookup('env', 'DISCOURSE_SMTP_PORT') | default('') | trim | split(',') }}"
+  when: lookup('env', 'DISCOURSE_SMTP_PORT') | default('', true) | trim != ''
+- name: DISCOURSE_SMTP_PORT prompt user input if unset
+  pause:
+    prompt: "SET DISCOURSE_SMTP_PORT"
+    echo: yes
+  register: input
+  when: DISCOURSE_SMTP_PORT is not defined
+- name: Set DISCOURSE_SMTP_PORT fact from user input
+  set_fact:
+    DISCOURSE_SMTP_PORT: "{{ input.user_input | default('') | trim | split(',') }}"
+  when: DISCOURSE_SMTP_PORT is not defined
+
+# Discourse SMTP USER
+- name: DISCOURSE_SMTP_USER set fact from env if possible
+  set_fact:
+    DISCOURSE_SMTP_USER: "{{ lookup('env', 'DISCOURSE_SMTP_USER') | default('') | trim | split(',') }}"
+  when: lookup('env', 'DISCOURSE_SMTP_USER') | default('', true) | trim != ''
+- name: DISCOURSE_SMTP_USER prompt user input if unset
+  pause:
+    prompt: "SET DISCOURSE_SMTP_USER"
+    echo: yes
+  register: input
+  when: DISCOURSE_SMTP_USER is not defined
+- name: Set DISCOURSE_SMTP_USER fact from user input
+  set_fact:
+    DISCOURSE_SMTP_USER: "{{ input.user_input | default('') | trim | split(',') }}"
+  when: DISCOURSE_SMTP_USER is not defined
+
+# Discourse SMTP PASSWORD
+- name: DISCOURSE_SMTP_PASSWORD set fact from env if possible
+  set_fact:
+    DISCOURSE_SMTP_PASSWORD: "{{ lookup('env', 'DISCOURSE_SMTP_PASSWORD') | default('') | trim | split(',') }}"
+  when: lookup('env', 'DISCOURSE_SMTP_PASSWORD') | default('', true) | trim != ''
+- name: DISCOURSE_SMTP_PASSWORD prompt user input if unset
+  pause:
+    prompt: "SET DISCOURSE_SMTP_PASSWORD"
+    echo: yes
+  register: input
+  when: DISCOURSE_SMTP_PASSWORD is not defined
+- name: Set DISCOURSE_SMTP_PASSWORD fact from user input
+  set_fact:
+    DISCOURSE_SMTP_PASSWORD: "{{ input.user_input | default('') | trim | split(',') }}"
+  when: DISCOURSE_SMTP_PASSWORD is not defined
+
+
+###############################################################################
+############################ ROLE IMPLEMENTATION ##############################
+###############################################################################
+
+
+# Step 1: Install & Configure Docker
+
+- name: Install required packages
+  apt:
+    name: "{{ item }}"
+    state: present
+  with_items: "docker.io"
+  become: yes
+
+# Step 2: Install Discourse
+
+- name: Clone Discourse repository
+  git:
+    repo: https://github.com/discourse/discourse_docker.git
+    dest: "/var/discourse"
+  become: yes
+
+- name: Set ownership for Discourse directory
+  file:
+    path: /var/discourse/containers
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  become: yes
+
+- name: Copy Discourse sample configuration
+  template:
+    src: "app.yml.j2"
+    dest: "/var/discourse/containers/app.yml"
+  become: yes
+
+# Combines ./launcher bootstrap app and ./launcher start app
+- name: Bootstrap Discourse Containers
+  command: ./launcher rebuild app
+  args:
+    chdir: "/var/discourse"
+  become: yes
+
+# Step 3: Configure NGINX
+
+- name: Copy Nginx configuration
+  template:
+    src: "nginx.conf.j2"
+    dest: "/etc/nginx/sites-available/{{ lookup('env', 'DISCOURSE_NGINX_CONFIG_NAME') }}"
+  become: yes
+
+- name: Bootstrap Discourse Containers
+  command: systemctl restart nginx
+  become: yes
